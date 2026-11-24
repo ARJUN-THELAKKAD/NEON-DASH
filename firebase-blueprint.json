@@ -1,0 +1,86 @@
+{
+  "entities": {
+    "LeaderboardEntry": {
+      "title": "LeaderboardEntry",
+      "description": "Public high-score record for a runner on the Neon Dash global leaderboard. Contains no PII.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "Authenticated Firebase user UID matching the document ID.",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "playerName": {
+          "type": "string",
+          "description": "Display callsign chosen by the runner.",
+          "minLength": 1,
+          "maxLength": 18
+        },
+        "score": {
+          "type": "integer",
+          "description": "Player's highest submitted run score.",
+          "minimum": 1,
+          "maximum": 50000000
+        },
+        "distance": {
+          "type": "integer",
+          "description": "Best run distance in meters.",
+          "minimum": 0,
+          "maximum": 5000000
+        },
+        "equippedSkin": {
+          "type": "string",
+          "description": "Runner avatar skin identifier.",
+          "enum": [
+            "cyber_pulse",
+            "crimson_blaze",
+            "solar_gold",
+            "void_phantom",
+            "emerald_surge"
+          ]
+        },
+        "featuredBadge": {
+          "type": "string",
+          "description": "Featured achievement badge ID, or empty string if none.",
+          "maxLength": 32
+        },
+        "badgeCount": {
+          "type": "integer",
+          "description": "Number of unlocked milestone badges.",
+          "minimum": 0,
+          "maximum": 10
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the leaderboard entry was first created."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the leaderboard entry was last updated."
+        }
+      },
+      "required": [
+        "uid",
+        "playerName",
+        "score",
+        "distance",
+        "equippedSkin",
+        "featuredBadge",
+        "badgeCount",
+        "createdAt",
+        "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/leaderboard/{userId}": {
+      "schema": {
+        "$ref": "#/entities/LeaderboardEntry"
+      },
+      "description": "Global leaderboard collection keyed by Firebase Auth UID (one personal-best entry per player, zero PII)."
+    }
+  }
+}

@@ -1,0 +1,146 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Default deny for all unspecified collections and paths
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedUser() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_-]+$');
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidSkin(skin) {
+      return skin is string && skin in [
+        'cyber_pulse',
+        'crimson_blaze',
+        'solar_gold',
+        'void_phantom',
+        'emerald_surge'
+      ];
+    }
+
+    function isValidBadge(badge) {
+      return badge is string && badge.size() <= 32 && badge in [
+        '',
+        'dist_1000',
+        'dist_5000',
+        'dist_20000',
+        'coins_100',
+        'coins_500',
+        'coins_2000',
+        'runs_10',
+        'near_miss_25',
+        'speed_260',
+        'score_15000'
+      ];
+    }
+
+    function isValidLeaderboardEntry(data, userId) {
+      return data.keys().hasAll([
+          'uid',
+          'playerName',
+          'score',
+          'distance',
+          'equippedSkin',
+          'featuredBadge',
+          'badgeCount',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'uid',
+          'playerName',
+          'score',
+          'distance',
+          'equippedSkin',
+          'featuredBadge',
+          'badgeCount',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.uid is string
+        && data.uid.size() >= 1
+        && data.uid.size() <= 128
+        && data.uid == userId
+        && data.uid == request.auth.uid
+        && data.playerName is string
+        && data.playerName.size() >= 1
+        && data.playerName.size() <= 18
+        && data.score is int
+        && data.score >= 1
+        && data.score <= 50000000
+        && data.distance is int
+        && data.distance >= 0
+        && data.distance <= 5000000
+        && isValidSkin(data.equippedSkin)
+        && isValidBadge(data.featuredBadge)
+        && data.badgeCount is int
+        && data.badgeCount >= 0
+        && data.badgeCount <= 10
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    // Global Leaderboard: non-PII public top scores keyed strictly by authenticated user UID
+    match /leaderboard/{userId} {
+      allow get: if isValidId(userId)
+        && (isOwner(userId)
+          || (resource != null && existing().score > 0));
+
+      allow list: if existing().score > 0
+        && request.query.limit != null
+        && request.query.limit <= 10;
+
+      allow create: if isVerifiedUser()
+        && isValidId(userId)
+        && userId == request.auth.uid
+        && isValidLeaderboardEntry(incoming(), userId)
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+
+      allow update: if isVerifiedUser()
+        && isValidId(userId)
+        && userId == request.auth.uid
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'playerName',
+          'score',
+          'distance',
+          'equippedSkin',
+          'featuredBadge',
+          'badgeCount',
+          'updatedAt'
+        ])
+        && isValidLeaderboardEntry(incoming(), userId)
+        && incoming().uid == existing().uid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().score >= existing().score;
+
+      allow delete: if isVerifiedUser()
+        && isValidId(userId)
+        && userId == request.auth.uid;
+    }
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "name": "Neon Dash",
+  "description": "A fast-paced futuristic 3-lane endless runner game built with Phaser 3, featuring neon visuals, power-ups, synthesized synthwave audio, and responsive desktop and mobile controls.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
