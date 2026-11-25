@@ -229,4 +229,15 @@ function createParticleTextures(scene: Phaser.Scene): void {
     ctx.arc(48, 48, 38, 0, Math.PI * 2);
     ctx.stroke();
   });
+
+  createCanvasTexture(scene, 'particle_dust', 24, 24, (ctx) => {
+    const grad = ctx.createRadialGradient(12, 12, 1, 12, 12, 11);
+    grad.addColorStop(0, 'rgba(255, 255, 255, 0.92)');
+    grad.addColorStop(0.48, 'rgba(215, 238, 255, 0.48)');
+    grad.addColorStop(1, 'rgba(180, 220, 255, 0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(12, 12, 11, 0, Math.PI * 2);
+    ctx.fill();
+  });
 }

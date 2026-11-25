@@ -4,10 +4,13 @@ import {
   getPlayerRankTitle,
   type AchievementId,
 } from '../game/achievements';
+import { getSkinSpec, type RunnerSkinId } from '../game/cosmetics';
 import { BadgeMedallion } from './BadgeMedallion';
+import { CharacterAvatar } from './CharacterAvatar';
 
 interface MainMenuProps {
   playerName: string;
+  equippedSkin: RunnerSkinId;
   bestScore: number;
   bestDistance: number;
   totalCoins: number;
@@ -23,6 +26,7 @@ interface MainMenuProps {
 
 export function MainMenu({
   playerName,
+  equippedSkin,
   bestScore,
   bestDistance,
   totalCoins,
@@ -35,6 +39,7 @@ export function MainMenu({
   onInstructions,
   onToggleMute,
 }: MainMenuProps) {
+  const skin = getSkinSpec(equippedSkin);
   const rankTitle = getPlayerRankTitle(unlockedAchievements.length);
   // Order badges so featured badge appears first on the profile bar
   const orderedBadges = [...unlockedAchievements]
@@ -111,16 +116,31 @@ export function MainMenu({
         </button>
       </div>
 
-      {/* Center focal title and actions */}
+      {/* Center focal character showcase, title, and actions */}
       <div className="flex flex-col items-center text-center max-w-xl animate-screen-in pointer-events-auto">
-        <h1 className="font-display italic font-bold tracking-tight text-6xl sm:text-8xl leading-none bg-gradient-to-r from-[#00f0ff] via-[#c77dff] to-[#ff2a85] bg-clip-text text-transparent neon-title-glow">
+        <div className="relative flex flex-col items-center mb-2">
+          <div
+            className="absolute bottom-1 w-28 sm:w-36 h-6 rounded-full blur-md pointer-events-none"
+            style={{ backgroundColor: skin.auraRgba }}
+            aria-hidden="true"
+          />
+          <CharacterAvatar
+            pose="idle_front"
+            skinId={equippedSkin}
+            animated
+            className="relative z-10 w-28 h-28 sm:w-36 sm:h-36"
+            alt="Neon Dash runner standing idle"
+          />
+        </div>
+
+        <h1 className="font-display italic font-bold tracking-tight text-5xl sm:text-7xl leading-none bg-gradient-to-r from-[#00f0ff] via-[#c77dff] to-[#ff2a85] bg-clip-text text-transparent neon-title-glow">
           NEON DASH
         </h1>
-        <p className="mt-4 text-slate-200/90 text-base sm:text-lg max-w-md leading-relaxed">
+        <p className="mt-3 text-slate-200/90 text-sm sm:text-base max-w-md leading-relaxed">
           Sprint across an electric three-lane highway. Dodge barriers, leap over hazards, and collect power-ups as speed climbs.
         </p>
 
-        <div className="mt-8 flex flex-col items-center gap-3.5 w-full sm:w-auto">
+        <div className="mt-6 flex flex-col items-center gap-3 w-full sm:w-auto">
           <button
             type="button"
             onClick={onPlay}

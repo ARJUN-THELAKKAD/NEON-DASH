@@ -1,11 +1,16 @@
 import Phaser from 'phaser';
 import { AudioManager } from './AudioManager';
 import {
+  preloadCharacterAssets,
+  type CharacterAnimState,
+} from './characterAssets';
+import {
   getSkinSpec,
   getTrailSpec,
   type RunnerSkinId,
   type TrailStyleId,
 } from './cosmetics';
+import { CollisionManager } from './CollisionManager';
 import { RunnerAnimator } from './RunnerAnimator';
 import { SDKBridge } from './SDKBridge';
 import { StorageManager } from './StorageManager';
@@ -105,7 +110,7 @@ interface SpeedLine {
   color: number;
 }
 
-const PLAYER_Z = 0.085;
+const PLAYER_Z = 0.082;
 const PERSP_K = 5.4;
 const T_MIN = 1 / (1 + PERSP_K);
 
@@ -151,18 +156,27 @@ export class GameScene extends Phaser.Scene {
   private jumpBufferTimer = 0;
   private fastFalling = false;
   private invulnTimer = 0;
+  private hurtTimer = 0;
   private playerLaneVel = 0;
   private animSquashX = 1;
   private animSquashY = 1;
+  private animGroundContact = 1;
+  private animFootWeightX = 0;
+  private animStrideBounce = 0;
+  private boostSpeedMult = 1;
   private ghostSlotIdx = 0;
   private cameraSwayX = 0;
+  private cameraDipY = 0;
+  private cameraDipVel = 0;
+  private cameraBreathY = 0;
   private ghostTimer = 0;
   private slideSparkTimer = 0;
   private boostTrailTimer = 0;
   private cosmeticSparkTimer = 0;
 
-  // Articulated 60 FPS runner animator
+  // Articulated 60 FPS runner animator & collision/landing feedback manager
   private runnerAnimator!: RunnerAnimator;
+  private collisionManager!: CollisionManager;
 
   // Equipped cosmetics
   private equippedSkin: RunnerSkinId = 'cyber_pulse';
@@ -213,6 +227,10 @@ export class GameScene extends Phaser.Scene {
   constructor(callbacks: GameCallbacks) {
     super({ key: 'GameScene' });
     this.callbacks = callbacks;
+  }
+
+  preload(): void {
+    preloadCharacterAssets(this);
   }
 
   create(): void {
@@ -290,9 +308,10 @@ export class GameScene extends Phaser.Scene {
     this.playerAuraGfx = this.add.graphics().setDepth(495);
 
     this.runnerAnimator = new RunnerAnimator(this);
+    this.collisionManager = new CollisionManager(this);
     this.playerSprite = this.add
       .sprite(0, 0, this.runnerAnimator.getTextureKey())
-      .setOrigin(0.5, 0.895)
+      .setOrigin(0.5, 0.968)
       .setDepth(500);
 
     this.obstaclesFrontGfx = this.add.graphics().setDepth(600);
@@ -390,6 +409,8 @@ export class GameScene extends Phaser.Scene {
       this.keyDownHandler = undefined;
     }
     this.scale.off('resize', this.handleResize, this);
+    this.runnerAnimator?.destroy();
+    this.collisionManager?.destroy();
     this.clearAllEntities();
   }
 
@@ -406,17 +427,36 @@ export class GameScene extends Phaser.Scene {
     this.trailHistory = [];
 
     const skin = getSkinSpec(skinId);
+    const previewState: CharacterAnimState =
+      this.mode === 'GAMEOVER'
+        ? this.isNewBest
+          ? 'VICTORY'
+          : 'DEATH'
+        : this.isJumping
+          ? 'JUMP'
+          : this.isSliding
+            ? 'SLIDE'
+            : 'RUN';
+
+    const currentScrollRate =
+      this.mode === 'PLAYING'
+        ? this.runSpeed * this.boostSpeedMult * 1.65
+        : this.mode === 'ATTRACT'
+          ? this.runSpeed * 1.4
+          : 0;
+
     this.runnerAnimator.triggerJumpImpulse();
     this.runnerAnimator.updateAndDraw({
       dt: 0.016,
       elapsed: this.elapsedTime,
-      speedNorm: 0.3,
+      groundScrollRate: currentScrollRate,
       laneVel: this.playerLaneVel,
       playerY: this.playerY,
       playerVy: this.playerVy,
       isJumping: this.isJumping,
       isSliding: this.isSliding,
       isBoosting: this.boostTimer > 0,
+      animState: previewState,
       skin,
     });
 
@@ -439,12 +479,20 @@ export class GameScene extends Phaser.Scene {
     this.isJumping = false;
     this.isSliding = false;
     this.invulnTimer = 0;
+    this.hurtTimer = 0;
     this.hasShield = false;
     this.magnetTimer = 0;
     this.multiplierTimer = 0;
     this.boostTimer = 0;
     this.animSquashX = 1;
     this.animSquashY = 1;
+    this.animGroundContact = 1;
+    this.animFootWeightX = 0;
+    this.animStrideBounce = 0;
+    this.cameraDipY = 0;
+    this.cameraDipVel = 0;
+    this.cameraBreathY = 0;
+    this.boostSpeedMult = 1;
     this.runnerAnimator.reset();
     this.playerSprite.setVisible(true).setAlpha(1).setRotation(0);
     this.cameras.main.resetFX();
@@ -481,6 +529,7 @@ export class GameScene extends Phaser.Scene {
     this.jumpBufferTimer = 0;
     this.fastFalling = false;
     this.invulnTimer = 0;
+    this.hurtTimer = 0;
     this.cameraSwayX = 0;
     this.ghostTimer = 0;
     this.slideSparkTimer = 0;
@@ -497,6 +546,13 @@ export class GameScene extends Phaser.Scene {
     this.playerLaneVel = 0;
     this.animSquashX = 1;
     this.animSquashY = 1;
+    this.animGroundContact = 1;
+    this.animFootWeightX = 0;
+    this.animStrideBounce = 0;
+    this.cameraDipY = 0;
+    this.cameraDipVel = 0;
+    this.cameraBreathY = 0;
+    this.boostSpeedMult = 1;
     this.runnerAnimator.reset();
 
     this.playerSprite
@@ -614,18 +670,16 @@ export class GameScene extends Phaser.Scene {
     this.elapsedTime += dt;
 
     if (this.mode === 'ATTRACT') {
-      this.worldScroll += this.runSpeed * dt * 1.4;
-      // Gentle auto lane cruise in attract mode with natural banking & footstep sparks
+      const attractScrollRate = this.runSpeed * 1.4;
+      this.worldScroll += attractScrollRate * dt;
+      // Smooth auto lane cruise in attract mode (exponential easing prevents frame-1 velocity spike)
       const prevLane = this.playerLaneX;
       const waveLane = Math.sin(this.elapsedTime * 0.55) * 0.55;
-      this.playerLaneX = waveLane;
+      this.playerLaneX = Phaser.Math.Linear(this.playerLaneX, waveLane, 1 - Math.exp(-6 * dt));
       this.playerLaneVel = (this.playerLaneX - prevLane) / Math.max(0.001, dt);
+      const attractTargetRot = Phaser.Math.Clamp(this.playerLaneVel * 0.04, -0.12, 0.12);
       this.playerSprite.setRotation(
-        Phaser.Math.Linear(
-          this.playerSprite.rotation,
-          Phaser.Math.Clamp(this.playerLaneVel * 0.045, -0.14, 0.14),
-          0.18
-        )
+        Phaser.Math.Linear(this.playerSprite.rotation, attractTargetRot, 1 - Math.exp(-14 * dt))
       );
       this.cameraSwayX = -this.playerLaneX * this.scale.width * 0.018;
 
@@ -633,17 +687,22 @@ export class GameScene extends Phaser.Scene {
       const animOut = this.runnerAnimator.updateAndDraw({
         dt,
         elapsed: this.elapsedTime,
-        speedNorm: 0.28,
+        groundScrollRate: attractScrollRate,
         laneVel: this.playerLaneVel,
         playerY: 0,
         playerVy: 0,
         isJumping: false,
         isSliding: false,
         isBoosting: false,
+        animState: 'RUN',
         skin,
       });
       this.animSquashX = animOut.squashX;
       this.animSquashY = animOut.squashY;
+      this.animGroundContact = animOut.groundContactFactor;
+      this.animFootWeightX = animOut.footWeightX;
+      this.animStrideBounce = animOut.strideBounceNorm;
+      this.updateCameraVerticalPolish(dt, false, 0.25);
       if (animOut.footStrikeSide !== 0) {
         const footP = this.project(this.playerLaneX + animOut.footStrikeSide * 0.09, 0, PLAYER_Z);
         this.spawnBurst(footP.x, footP.y + 2, skin.trimNum, 2, 0.36);
@@ -658,6 +717,30 @@ export class GameScene extends Phaser.Scene {
 
     if (this.mode === 'CRASHING') {
       this.crashTimer -= dt;
+      this.hurtTimer = Math.max(0, this.hurtTimer - dt);
+      // Settle runner smoothly onto the road while transitioning HURT -> DEATH
+      this.playerY = Phaser.Math.Linear(this.playerY, 0, 1 - Math.exp(-12 * dt));
+      this.playerSprite.setRotation(
+        Phaser.Math.Linear(this.playerSprite.rotation, 0, 1 - Math.exp(-14 * dt))
+      );
+
+      const skin = getSkinSpec(this.equippedSkin);
+      const crashAnimOut = this.runnerAnimator.updateAndDraw({
+        dt,
+        elapsed: this.elapsedTime,
+        groundScrollRate: 0,
+        laneVel: 0,
+        playerY: this.playerY,
+        playerVy: 0,
+        isJumping: false,
+        isSliding: false,
+        isBoosting: false,
+        animState: this.hurtTimer > 0 ? 'HURT' : 'DEATH',
+        skin,
+      });
+      this.animSquashX = crashAnimOut.squashX;
+      this.animSquashY = crashAnimOut.squashY;
+
       this.updateParticles(dt);
       this.updatePopups(dt);
       this.renderFrame();
@@ -668,6 +751,24 @@ export class GameScene extends Phaser.Scene {
     }
 
     if (this.mode === 'GAMEOVER') {
+      const skin = getSkinSpec(this.equippedSkin);
+      const endAnimOut = this.runnerAnimator.updateAndDraw({
+        dt,
+        elapsed: this.elapsedTime,
+        groundScrollRate: 0,
+        laneVel: 0,
+        playerY: 0,
+        playerVy: 0,
+        isJumping: false,
+        isSliding: false,
+        isBoosting: false,
+        animState: this.isNewBest ? 'VICTORY' : 'DEATH',
+        skin,
+      });
+      this.animSquashX = endAnimOut.squashX;
+      this.animSquashY = endAnimOut.squashY;
+      this.animGroundContact = 1;
+
       this.updateParticles(dt);
       this.updatePopups(dt);
       this.renderFrame();
@@ -676,7 +777,13 @@ export class GameScene extends Phaser.Scene {
 
     // ---- PLAYING MODE ----
     this.updateDifficultyAndSpeed(dt);
-    const effectiveSpeed = this.boostTimer > 0 ? this.runSpeed * 1.58 : this.runSpeed;
+    const targetBoostMult = this.boostTimer > 0 ? 1.58 : 1.0;
+    this.boostSpeedMult = Phaser.Math.Linear(
+      this.boostSpeedMult,
+      targetBoostMult,
+      1 - Math.exp(-14 * dt)
+    );
+    const effectiveSpeed = this.runSpeed * this.boostSpeedMult;
 
     this.worldScroll += effectiveSpeed * dt * 1.65;
     const distDelta = effectiveSpeed * dt * 52;
@@ -731,6 +838,7 @@ export class GameScene extends Phaser.Scene {
 
   private updateTimers(dt: number): void {
     if (this.invulnTimer > 0) this.invulnTimer = Math.max(0, this.invulnTimer - dt);
+    if (this.hurtTimer > 0) this.hurtTimer = Math.max(0, this.hurtTimer - dt);
     if (this.magnetTimer > 0) this.magnetTimer = Math.max(0, this.magnetTimer - dt);
     if (this.multiplierTimer > 0) this.multiplierTimer = Math.max(0, this.multiplierTimer - dt);
     if (this.boostTimer > 0) {
@@ -747,24 +855,29 @@ export class GameScene extends Phaser.Scene {
   }
 
   private updatePlayerPhysics(dt: number, effectiveSpeed: number): void {
-    // Snappy exponential lane interpolation
+    // Snappy exponential lane interpolation without final-frame velocity snap jitter
     const prevLaneX = this.playerLaneX;
     this.playerLaneX = Phaser.Math.Linear(
       this.playerLaneX,
       this.targetLane,
       1 - Math.exp(-20 * dt)
     );
-    if (Math.abs(this.playerLaneX - this.targetLane) < 0.004) {
+    const laneDelta = this.playerLaneX - prevLaneX;
+    if (Math.abs(this.playerLaneX - this.targetLane) < 0.002) {
       this.playerLaneX = this.targetLane;
+      this.playerLaneVel = 0;
+    } else {
+      this.playerLaneVel = laneDelta / Math.max(0.001, dt);
     }
 
-    // Subtle banking tilt when switching lanes
-    this.playerLaneVel = (this.playerLaneX - prevLaneX) / Math.max(0.001, dt);
-    const targetRot = Phaser.Math.Clamp(this.playerLaneVel * 0.036, -0.22, 0.22);
-    this.playerSprite.setRotation(Phaser.Math.Linear(this.playerSprite.rotation, targetRot, 0.25));
+    // Subtle dt-independent outer pivot lean complementing the anatomical rig lean
+    const targetRot = Phaser.Math.Clamp(this.playerLaneVel * 0.02, -0.11, 0.11);
+    this.playerSprite.setRotation(
+      Phaser.Math.Linear(this.playerSprite.rotation, targetRot, 1 - Math.exp(-16 * dt))
+    );
 
     // Dynamic subtle camera parallax sway
-    const desiredSway = -this.playerLaneX * this.scale.width * 0.022;
+    const desiredSway = -this.playerLaneX * this.scale.width * 0.024;
     this.cameraSwayX = Phaser.Math.Linear(this.cameraSwayX, desiredSway, 1 - Math.exp(-10 * dt));
 
     // Jump & gravity
@@ -785,14 +898,22 @@ export class GameScene extends Phaser.Scene {
         this.playerVy = 0;
         this.isJumping = false;
         this.runnerAnimator.triggerLandingImpact(wasFastFalling ? 1.45 : 1.0);
+        this.cameraDipVel += wasFastFalling ? 115 : 68;
 
         const landP = this.project(this.playerLaneX, 0, PLAYER_Z);
-        this.spawnBurst(
+        this.collisionManager.emitJumpLandingFeedback({
+          footX: landP.x,
+          footY: landP.y + 2 * landP.scale,
+          scale: landP.scale,
+          primaryColor: skin.trimNum,
+          accentColor: skin.coreNum,
+          wasFastFalling,
+        });
+        this.spawnLandingRipple(
           landP.x,
           landP.y + 2,
           wasFastFalling ? skin.coreNum : skin.trimNum,
-          wasFastFalling ? 12 : 6,
-          wasFastFalling ? 1.05 : 0.65
+          landP.scale * (wasFastFalling ? 1.25 : 0.92)
         );
 
         if (wasFastFalling) {
@@ -836,31 +957,86 @@ export class GameScene extends Phaser.Scene {
       }
     }
 
-    // Drive 60 FPS articulated skeletal animation & synchronized footstep sparks
-    const speedNorm = Phaser.Math.Clamp(
-      (effectiveSpeed - BASE_SPEED) / (MAX_SPEED - BASE_SPEED),
-      0,
-      1.4
-    );
+    // Drive velocity-synchronized sprite animation & footstep contact sparks
+    const groundScrollRate = effectiveSpeed * 1.65;
+    const animState: CharacterAnimState =
+      this.hurtTimer > 0
+        ? 'HURT'
+        : this.isJumping
+          ? 'JUMP'
+          : this.isSliding
+            ? 'SLIDE'
+            : 'RUN';
+
     const animOut = this.runnerAnimator.updateAndDraw({
       dt,
       elapsed: this.elapsedTime,
-      speedNorm,
+      groundScrollRate,
       laneVel: this.playerLaneVel,
       playerY: this.playerY,
       playerVy: this.playerVy,
       isJumping: this.isJumping,
       isSliding: this.isSliding,
       isBoosting: this.boostTimer > 0,
+      animState,
       skin,
     });
     this.animSquashX = animOut.squashX;
     this.animSquashY = animOut.squashY;
+    this.animGroundContact = animOut.groundContactFactor;
+    this.animFootWeightX = animOut.footWeightX;
+    this.animStrideBounce = animOut.strideBounceNorm;
+
+    const speedNorm = Phaser.Math.Clamp(
+      (effectiveSpeed - BASE_SPEED) / (MAX_SPEED - BASE_SPEED),
+      0,
+      1.3
+    );
+    this.updateCameraVerticalPolish(dt, animState === 'RUN', speedNorm);
 
     if (animOut.footStrikeSide !== 0) {
       const footP = this.project(this.playerLaneX + animOut.footStrikeSide * 0.09, 0, PLAYER_Z);
-      this.spawnBurst(footP.x, footP.y + 2, skin.trimNum, 2, 0.42);
+      this.spawnBurst(footP.x, footP.y + 2, skin.trimNum, 2, 0.44);
     }
+  }
+
+  private updateCameraVerticalPolish(dt: number, isRunning: boolean, speedNorm: number): void {
+    // Soft damped landing dip spring (subtle tactile weight on touchdown, zero jarring shake)
+    const dipForce = -170 * this.cameraDipY - 20 * this.cameraDipVel;
+    this.cameraDipVel += dipForce * dt;
+    this.cameraDipY = Phaser.Math.Clamp(this.cameraDipY + this.cameraDipVel * dt, -3, 10);
+    if (Math.abs(this.cameraDipY) < 0.02 && Math.abs(this.cameraDipVel) < 0.1) {
+      this.cameraDipY = 0;
+      this.cameraDipVel = 0;
+    }
+
+    // Subtle stride-synced vertical micro-horizon breath during active running
+    const targetBreath = isRunning ? this.animStrideBounce * (1.2 + speedNorm * 1.1) : 0;
+    this.cameraBreathY = Phaser.Math.Linear(
+      this.cameraBreathY,
+      targetBreath,
+      1 - Math.exp(-14 * dt)
+    );
+  }
+
+  private spawnLandingRipple(x: number, y: number, color: number, scaleBase: number): void {
+    const ring = this.add
+      .image(x, y, 'particle_ring')
+      .setTint(color)
+      .setBlendMode(Phaser.BlendModes.ADD)
+      .setDepth(491)
+      .setScale(0.35 * scaleBase, 0.11 * scaleBase)
+      .setAlpha(0.75);
+
+    this.tweens.add({
+      targets: ring,
+      scaleX: 1.45 * scaleBase,
+      scaleY: 0.36 * scaleBase,
+      alpha: 0,
+      duration: 240,
+      ease: 'Cubic.easeOut',
+      onComplete: () => ring.destroy(),
+    });
   }
 
   private getActiveTrailColor(): number {
@@ -1141,35 +1317,31 @@ export class GameScene extends Phaser.Scene {
       }
 
       if (obs.active && !obs.smashed) {
-        const zDiff = Math.abs(obs.z - PLAYER_Z);
-        const xDiff = Math.abs(obs.lane - this.playerLaneX);
+        const collisionOutcome = this.collisionManager.evaluateObstacleCollision({
+          obstacleType: obs.type,
+          obstacleLane: obs.lane,
+          obstacleZ: obs.z,
+          nearMissed: obs.nearMissed,
+          playerLaneX: this.playerLaneX,
+          playerY: this.playerY,
+          playerZ: PLAYER_Z,
+          isSliding: this.isSliding,
+          isBoosting: this.boostTimer > 0,
+        });
 
-        // Collision Z window & lane X overlap (tuned for crisp, forgiving hitboxes)
-        if (zDiff < 0.034 && xDiff < 0.42) {
-          const clearedByJump = obs.type === 'LOW' && this.playerY > 0.19;
-          const clearedBySlide = obs.type === 'HIGH' && this.isSliding && this.playerY < 0.09;
-
-          if (!clearedByJump && !clearedBySlide) {
-            if (this.boostTimer > 0) {
-              // Hyper-Boost smashes straight through obstacles!
-              this.smashObstacle(obs, 100 * currentMult);
-            } else if (this.invulnTimer <= 0) {
-              if (this.hasShield) {
-                this.consumeShieldOnHit(obs);
-              } else {
-                this.triggerCrash(obs);
-                return;
-              }
+        if (collisionOutcome === 'HIT') {
+          if (this.boostTimer > 0) {
+            // Hyper-Boost smashes straight through obstacles!
+            this.smashObstacle(obs, 100 * currentMult);
+          } else if (this.invulnTimer <= 0) {
+            if (this.hasShield) {
+              this.consumeShieldOnHit(obs);
+            } else {
+              this.triggerCrash(obs);
+              return;
             }
           }
-        } else if (
-          !obs.nearMissed &&
-          obs.z < PLAYER_Z - 0.035 &&
-          obs.z > PLAYER_Z - 0.12 &&
-          xDiff >= 0.44 &&
-          xDiff < 0.92 &&
-          this.boostTimer <= 0
-        ) {
+        } else if (collisionOutcome === 'NEAR_MISS') {
           // Exciting Near-Miss bonus!
           obs.nearMissed = true;
           this.nearMissCount += 1;
@@ -1301,8 +1473,10 @@ export class GameScene extends Phaser.Scene {
   private consumeShieldOnHit(obs: ObstacleEntity): void {
     this.hasShield = false;
     this.invulnTimer = 1.35;
+    this.hurtTimer = 0.42;
     obs.active = false;
     obs.smashed = true;
+    this.runnerAnimator.triggerHurtImpulse();
 
     // Also clear any immediately overlapping obstacles so player lands safely
     for (const other of this.obstacles) {
@@ -1325,7 +1499,9 @@ export class GameScene extends Phaser.Scene {
   private triggerCrash(obs: ObstacleEntity): void {
     obs.active = false;
     this.mode = 'CRASHING';
-    this.crashTimer = 0.58;
+    this.crashTimer = 0.82;
+    this.hurtTimer = 0.3;
+    this.runnerAnimator.triggerHurtImpulse();
 
     AudioManager.playCollision();
     AudioManager.setMusicDucked(true);
@@ -1338,7 +1514,7 @@ export class GameScene extends Phaser.Scene {
     this.spawnShockwave(p.x, p.y, 0xff2a85);
     this.spawnBurst(p.x, p.y, 0xff2a85, 28, 1.7);
     this.spawnBurst(p.x, p.y, 0x00f0ff, 20, 1.4);
-    this.playerSprite.setVisible(false);
+    this.playerSprite.setVisible(true).setAlpha(1);
   }
 
   private finalizeGameOver(): void {
@@ -1362,6 +1538,7 @@ export class GameScene extends Phaser.Scene {
     }
 
     const isNewBest = finalScore > prevBest && finalScore > 0;
+    this.isNewBest = isNewBest;
     this.bestScore = updatedBest;
 
     const summary: GameOverSummary = {
@@ -1525,8 +1702,9 @@ export class GameScene extends Phaser.Scene {
     const w = this.scale.width;
     const h = this.scale.height;
     const isPortrait = h > w * 1.05;
-    const horizonY = h * (isPortrait ? 0.29 : 0.33);
-    const bottomY = h * 0.99;
+    const verticalResponse = this.cameraDipY + this.cameraBreathY;
+    const horizonY = h * (isPortrait ? 0.29 : 0.33) + verticalResponse;
+    const bottomY = h * 0.99 + this.cameraDipY * 0.4;
     const vanishX = w * 0.5 + this.cameraSwayX;
     const roadBottomWidth = isPortrait ? w * 0.96 : Math.min(w * 0.68, h * 0.96);
     const roadTopWidth = roadBottomWidth * 0.092;
@@ -2332,27 +2510,32 @@ export class GameScene extends Phaser.Scene {
     const groundP = this.project(this.playerLaneX, 0, PLAYER_Z);
     const bodyP = this.project(this.playerLaneX, this.playerY, PLAYER_Z);
 
-    // Dynamic ground shadow shrinks & softens as player jumps higher
-    const jumpFade = Phaser.Math.Clamp(1 - this.playerY * 1.45, 0.28, 1);
-    shadowGfx.fillStyle(0x000000, 0.55 * jumpFade);
+    // Dynamic ground shadow tracks supporting foot & modulates cleanly with jump height and stride flight
+    const jumpFade = Phaser.Math.Clamp(1 - this.playerY * 1.45, 0.26, 1);
+    const shadowFactor = jumpFade * (this.isJumping ? 1 : this.animGroundContact);
+    const shadowShiftX = this.isJumping ? 0 : this.animFootWeightX * groundP.laneWidth * 0.065;
+    const shadowWMult = this.isSliding ? 1.22 : 1.0;
+
+    shadowGfx.fillStyle(0x000000, 0.6 * shadowFactor);
     shadowGfx.fillEllipse(
-      groundP.x,
+      groundP.x + shadowShiftX,
       groundP.y + 4 * groundP.scale,
-      groundP.laneWidth * 0.58 * jumpFade,
-      Math.max(6, groundP.laneWidth * 0.14 * jumpFade)
+      groundP.laneWidth * 0.62 * shadowFactor * shadowWMult,
+      Math.max(6, groundP.laneWidth * 0.145 * shadowFactor)
     );
-    // Subtle neon ground reflection under runner
+    // Subtle neon ground reflection under runner's glowing sneakers
     const underGlow =
       this.boostTimer > 0 ? 0x38f9d7 : this.isSliding ? skin.coreNum : skin.trimNum;
-    shadowGfx.fillStyle(underGlow, 0.3 * jumpFade);
+    shadowGfx.fillStyle(underGlow, 0.34 * shadowFactor);
     shadowGfx.fillEllipse(
-      groundP.x,
+      groundP.x + shadowShiftX,
       groundP.y + 2 * groundP.scale,
-      groundP.laneWidth * 0.44 * jumpFade,
-      Math.max(4, groundP.laneWidth * 0.09 * jumpFade)
+      groundP.laneWidth * 0.46 * shadowFactor * shadowWMult,
+      Math.max(4, groundP.laneWidth * 0.095 * shadowFactor)
     );
 
-    const baseScale = bodyP.scale * 0.78;
+    // Heroic visual presence in lower-middle viewport without obscuring upcoming obstacles
+    const baseScale = bodyP.scale * 0.94;
     this.playerSprite
       .setPosition(bodyP.x, bodyP.y)
       .setScale(baseScale * this.animSquashX, baseScale * this.animSquashY);
@@ -2479,6 +2662,7 @@ export class GameScene extends Phaser.Scene {
     }
     this.popups = [];
 
+    this.collisionManager?.clear();
     this.tweens.killAll();
   }
 }

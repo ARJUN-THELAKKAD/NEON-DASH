@@ -8,6 +8,7 @@ import {
   type TrailStyleId,
   type TrailStyleSpec,
 } from '../game/cosmetics';
+import { CharacterAvatar } from './CharacterAvatar';
 
 interface SkinStoreModalProps {
   coins: number;
@@ -123,7 +124,7 @@ export function SkinStoreModal({
                     }`}
                   >
                     <div>
-                      <RunnerAvatarPreview skin={skin} />
+                      <RunnerAvatarPreview skin={skin} isEquipped={isEquipped} />
                       <div className="mt-3 flex items-center justify-between gap-2">
                         <h3 className="font-display font-bold text-base text-white">
                           {skin.name}
@@ -300,110 +301,27 @@ function StoreActionButton({
   );
 }
 
-function RunnerAvatarPreview({ skin }: { skin: RunnerSkinSpec }) {
+function RunnerAvatarPreview({
+  skin,
+  isEquipped,
+}: {
+  skin: RunnerSkinSpec;
+  isEquipped: boolean;
+}) {
   return (
     <div
-      className="relative h-28 rounded-lg bg-[#07091a] border border-white/5 flex items-center justify-center overflow-hidden"
+      className="relative h-32 rounded-lg bg-[#07091a] border border-white/5 flex items-center justify-center overflow-hidden p-2"
       style={{
-        backgroundImage: `radial-gradient(circle at 50% 55%, ${skin.auraRgba}, transparent 72%)`,
+        backgroundImage: `radial-gradient(circle at 50% 58%, ${skin.auraRgba}, transparent 72%)`,
       }}
     >
-      <svg
-        viewBox="0 0 120 120"
-        className="w-24 h-24"
-        aria-hidden="true"
-      >
-        {/* Helmet */}
-        <circle cx="60" cy="28" r="13" fill={skin.suitTop} stroke={skin.trimHex} strokeWidth="2.6" />
-        <rect x="44" y="25" width="4" height="6" rx="1" fill={skin.trimHex} />
-        <rect x="72" y="25" width="4" height="6" rx="1" fill={skin.trimHex} />
-
-        {/* Flowing neon scarf */}
-        <path
-          d="M 65 40 Q 82 35 92 48"
-          fill="none"
-          stroke={skin.coreHex}
-          strokeWidth="3.5"
-          strokeLinecap="round"
-        />
-
-        {/* Arms */}
-        <path
-          d="M 43 46 L 34 62 L 30 74"
-          fill="none"
-          stroke={skin.limbDark}
-          strokeWidth="7"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-        <path
-          d="M 34 62 L 30 74"
-          fill="none"
-          stroke={skin.trimHex}
-          strokeWidth="2.5"
-          strokeLinecap="round"
-        />
-        <path
-          d="M 77 46 L 86 60 L 90 71"
-          fill="none"
-          stroke={skin.limbDark}
-          strokeWidth="7"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-        <path
-          d="M 86 60 L 90 71"
-          fill="none"
-          stroke={skin.trimHex}
-          strokeWidth="2.5"
-          strokeLinecap="round"
-        />
-
-        {/* Torso */}
-        <polygon
-          points="42,43 78,43 72,77 48,77"
-          fill={skin.suitTop}
-          stroke={skin.trimHex}
-          strokeWidth="2.4"
-        />
-        {/* Spine reactor diamond */}
-        <polygon points="60,48 67,58 60,70 53,58" fill={skin.coreHex} />
-        <circle cx="60" cy="59" r="2.4" fill="#ffffff" />
-
-        {/* Legs */}
-        <path
-          d="M 52 78 L 49 95 L 47 108"
-          fill="none"
-          stroke={skin.limbDark}
-          strokeWidth="8"
-          strokeLinecap="round"
-        />
-        <path
-          d="M 68 78 L 71 91 L 73 103"
-          fill="none"
-          stroke={skin.limbDark}
-          strokeWidth="8"
-          strokeLinecap="round"
-        />
-        <path
-          d="M 49 95 L 47 107"
-          fill="none"
-          stroke={skin.trimHex}
-          strokeWidth="2.2"
-          strokeLinecap="round"
-        />
-        <path
-          d="M 71 91 L 73 102"
-          fill="none"
-          stroke={skin.trimHex}
-          strokeWidth="2.2"
-          strokeLinecap="round"
-        />
-
-        {/* Hover boots */}
-        <ellipse cx="47" cy="110" rx="8" ry="3.5" fill={skin.bootHex} />
-        <ellipse cx="73" cy="105" rx="8" ry="3.5" fill={skin.bootHex} />
-      </svg>
+      <CharacterAvatar
+        pose="idle_front"
+        skinId={skin.id}
+        animated={isEquipped}
+        className="w-28 h-28"
+        alt={`${skin.name} runner avatar`}
+      />
     </div>
   );
 }

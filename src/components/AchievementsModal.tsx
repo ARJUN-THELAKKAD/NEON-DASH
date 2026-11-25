@@ -28,6 +28,7 @@ import {
   type LeaderboardRunner,
 } from '../game/LeaderboardService';
 import { BadgeMedallion } from './BadgeMedallion';
+import { CharacterAvatar } from './CharacterAvatar';
 
 export type AchievementsModalTab = 'PROFILE' | 'LEADERBOARD';
 
@@ -48,30 +49,18 @@ function RunnerMiniAvatar({ skinId }: { skinId: RunnerSkinId }) {
   const skin = getSkinSpec(skinId);
   return (
     <div
-      className="w-10 h-10 rounded-lg bg-[#07091a] border flex items-center justify-center shrink-0"
+      className="w-11 h-11 rounded-lg bg-[#07091a] border flex items-center justify-center shrink-0 overflow-hidden p-0.5"
       style={{
         borderColor: skin.trimHex,
         boxShadow: `0 0 12px ${skin.auraRgba}`,
       }}
     >
-      <svg viewBox="0 0 80 80" className="w-7 h-7" aria-hidden="true">
-        <circle
-          cx="40"
-          cy="20"
-          r="11"
-          fill={skin.suitTop}
-          stroke={skin.trimHex}
-          strokeWidth="3"
-        />
-        <polygon
-          points="25,35 55,35 50,64 30,64"
-          fill={skin.suitTop}
-          stroke={skin.trimHex}
-          strokeWidth="2.8"
-        />
-        <polygon points="40,40 46,49 40,59 34,49" fill={skin.coreHex} />
-        <circle cx="40" cy="49" r="2.2" fill="#ffffff" />
-      </svg>
+      <CharacterAvatar
+        pose="idle_front"
+        skinId={skinId}
+        className="w-10 h-10"
+        alt="Runner avatar"
+      />
     </div>
   );
 }
@@ -335,30 +324,19 @@ export function AchievementsModal({
                   {/* Identity + Equipped Avatar */}
                   <div className="flex items-center gap-4">
                     <div
-                      className="w-16 h-16 rounded-xl bg-[#07091a] border flex items-center justify-center shrink-0"
+                      className="w-16 h-16 rounded-xl bg-[#07091a] border flex items-center justify-center shrink-0 overflow-hidden p-1"
                       style={{
                         borderColor: skin.trimHex,
                         boxShadow: `0 0 18px ${skin.auraRgba}`,
                       }}
                     >
-                      <svg viewBox="0 0 80 80" className="w-12 h-12" aria-hidden="true">
-                        <circle
-                          cx="40"
-                          cy="20"
-                          r="11"
-                          fill={skin.suitTop}
-                          stroke={skin.trimHex}
-                          strokeWidth="2.5"
-                        />
-                        <polygon
-                          points="25,35 55,35 50,64 30,64"
-                          fill={skin.suitTop}
-                          stroke={skin.trimHex}
-                          strokeWidth="2.4"
-                        />
-                        <polygon points="40,40 46,49 40,59 34,49" fill={skin.coreHex} />
-                        <circle cx="40" cy="49" r="2" fill="#ffffff" />
-                      </svg>
+                      <CharacterAvatar
+                        pose="idle_front"
+                        skinId={equippedSkin}
+                        animated
+                        className="w-14 h-14"
+                        alt={`${playerName} runner avatar`}
+                      />
                     </div>
 
                     <div>

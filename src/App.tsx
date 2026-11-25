@@ -327,6 +327,7 @@ export default function App() {
       {screen === 'MENU' && (
         <MainMenu
           playerName={playerName}
+          equippedSkin={equippedSkin}
           bestScore={careerStats.bestScore}
           bestDistance={careerStats.bestDistance}
           totalCoins={careerStats.walletCoins}
@@ -402,6 +403,7 @@ export default function App() {
       {screen === 'GAMEOVER' && gameOverSummary && (
         <GameOverOverlay
           summary={gameOverSummary}
+          equippedSkin={equippedSkin}
           onRestart={() => startRun(true)}
           onHome={handleReturnHome}
           onViewAchievements={() => handleOpenAchievements('PROFILE')}

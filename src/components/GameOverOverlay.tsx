@@ -1,10 +1,13 @@
 import { Award, Globe, Home, RotateCcw, Trophy } from 'lucide-react';
 import { getAchievementSpec } from '../game/achievements';
+import type { RunnerSkinId } from '../game/cosmetics';
 import type { GameOverSummary } from '../game/types';
 import { BadgeMedallion } from './BadgeMedallion';
+import { CharacterAvatar } from './CharacterAvatar';
 
 interface GameOverOverlayProps {
   summary: GameOverSummary;
+  equippedSkin: RunnerSkinId;
   onRestart: () => void;
   onHome: () => void;
   onViewAchievements: () => void;
@@ -13,6 +16,7 @@ interface GameOverOverlayProps {
 
 export function GameOverOverlay({
   summary,
+  equippedSkin,
   onRestart,
   onHome,
   onViewAchievements,
@@ -24,16 +28,30 @@ export function GameOverOverlay({
 
   return (
     <div className="fixed inset-0 z-30 flex items-center justify-center p-4 bg-[#060714]/78 backdrop-blur-sm overflow-y-auto">
-      <div className="neon-panel w-full max-w-md rounded-2xl p-6 sm:p-8 text-center animate-screen-in my-auto">
+      <div className="neon-panel w-full max-w-md rounded-2xl p-6 sm:p-7 text-center animate-screen-in my-auto">
+        <div className="flex justify-center mb-1">
+          <CharacterAvatar
+            pose={summary.isNewBest ? 'victory' : 'death'}
+            skinId={equippedSkin}
+            animated={summary.isNewBest}
+            className="w-28 h-28"
+            alt={summary.isNewBest ? 'Runner celebrating victory' : 'Runner defeated'}
+          />
+        </div>
+
         {summary.isNewBest && (
-          <div className="inline-flex items-center gap-1.5 text-amber-300 text-sm font-semibold mb-2">
+          <div className="inline-flex items-center gap-1.5 text-amber-300 text-sm font-semibold mb-1">
             <Trophy className="w-4 h-4" />
             <span>New Personal Best</span>
           </div>
         )}
 
-        <h2 className="font-display font-bold text-3xl sm:text-4xl tracking-wide text-white neon-pink-glow">
-          Game Over
+        <h2
+          className={`font-display font-bold text-3xl sm:text-4xl tracking-wide text-white ${
+            summary.isNewBest ? 'neon-title-glow' : 'neon-pink-glow'
+          }`}
+        >
+          {summary.isNewBest ? 'Victory Run!' : 'Game Over'}
         </h2>
 
         {/* Final Score & Best Score */}
